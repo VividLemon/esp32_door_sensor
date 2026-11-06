@@ -9,7 +9,7 @@
 #endif
 
 constexpr int REED_PIN = 23;
-constexpr int RELAY_PIN = 13;
+constexpr int RELAY_PIN = 16;
 
 constexpr unsigned long WIFI_RETRY_MS = 10000;
 constexpr unsigned long MQTT_RETRY_MS = 5000;
@@ -33,8 +33,6 @@ enum class DoorState {
 
 DoorState currentDoorState = DoorState::UNKNOWN;
 
-bool relayPulseActive = false;
-unsigned long relayPulseStartMs = 0;
 unsigned long lastWiFiAttemptMs = 0;
 unsigned long lastMQTTAttemptMs = 0;
 
@@ -71,15 +69,10 @@ void buildClientId() {
 }
 
 void triggerRelayPulse() {
-  if (relayPulseActive) {
-    Serial.println("Relay pulse ignored: already active");
-    return;
-  }
-
-  relayPulseActive = true;
-  relayPulseStartMs = millis();
-  digitalWrite(RELAY_PIN, LOW);
+  digitalWrite(RELAY_PIN, HIGH);
   Serial.println("Relay pulse started");
+  delay(500);
+  digitalWrite(RELAY_PIN, LOW);
 }
 
 bool ensureWiFiConnected() {
@@ -216,14 +209,15 @@ void ensureMQTTConnected() {
 }
 
 void setup() {
+  // Run this immediately to prevent potential race condition of relay booting into "active-low". Still racing, but faster hopefully
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+  pinMode(REED_PIN, INPUT_PULLUP);
+
   Serial.begin(9600);
   WiFi.mode(WIFI_STA);
   buildClientId();
 
-  pinMode(REED_PIN, INPUT_PULLUP);
-
-  pinMode(RELAY_PIN, OUTPUT);
-  digitalWrite(RELAY_PIN, HIGH);
 
   int initialReed = digitalRead(REED_PIN);
   stableReedState = initialReed;
@@ -266,12 +260,6 @@ void loop() {
   }
 
   unsigned long now = millis();
-
-  if (relayPulseActive && now - relayPulseStartMs >= RELAY_PULSE_MS) {
-    relayPulseActive = false;
-    digitalWrite(RELAY_PIN, HIGH);
-    Serial.println("Relay pulse ended");
-  }
 
   int rawState = digitalRead(REED_PIN);
   if (rawState != lastRawReedState) {

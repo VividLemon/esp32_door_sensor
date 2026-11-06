@@ -1,0 +1,108 @@
+# ESPHome port of the ESP32 garage door controller.
+#
+# Hardware (same as the Arduino sketch):
+#   GPIO23  reed switch to GND, internal pull-up   (HIGH = door OPEN)
+#   GPIO13  relay module, active-LOW               (300 ms pulse = press opener button)
+#
+# Talks to Home Assistant over ESPHome's native API, so there is no MQTT
+# discovery payload, birth/LWT handling, or reconnect code to maintain.
+
+substitutions:
+  name: garage-door
+  friendly_name: Garage Door
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf          # "arduino" also works
+
+logger:
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+
+ota:
+  - platform: esphome
+    password: !secret ota_password
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  # If Wi-Fi is unreachable, the device starts its own hotspot so you can fix it
+  ap:
+    ssid: "Garage Door Fallback"
+    password: !secret fallback_ap_password
+
+captive_portal:
+
+# --- Door position sensor (was: REED_PIN + manual debounce) -----------------
+binary_sensor:
+  - platform: gpio
+    id: door_contact
+    name: "Door Contact"
+    internal: true         # HA only needs the cover entity below
+    device_class: garage_door
+    pin:
+      number: GPIO23
+      mode:
+        input: true
+        pullup: true
+    # Not inverted: HIGH (switch open) = door OPEN, as in doorStateFromReed()
+    filters:
+      - delayed_on_off: 75ms   # REED_DEBOUNCE_MS
+
+# --- Relay (was: RELAY_PIN + triggerRelayPulse) -----------------------------
+output:
+  - platform: gpio
+    id: relay_out
+    pin:
+      number: GPIO13
+      inverted: true       # relay board is active-LOW; boots released
+
+script:
+  - id: pulse_relay
+    mode: single           # ignore new commands while a pulse is running
+    then:
+      - output.turn_on: relay_out
+      - delay: 300ms       # RELAY_PULSE_MS
+      - output.turn_off: relay_out
+
+# --- The entity Home Assistant sees (was: MQTT discovery "cover") -----------
+cover:
+  - platform: template
+    id: garage_door
+    name: "Garage Door"
+    device_class: garage
+    lambda: |-
+      return id(door_contact).state ? COVER_OPEN : COVER_CLOSED;
+    # Same rule as mqttCallback(): skip the pulse if already in that state
+    open_action:
+      - if:
+          condition:
+            binary_sensor.is_off: door_contact
+          then:
+            - script.execute: pulse_relay
+    close_action:
+      - if:
+          condition:
+            binary_sensor.is_on: door_contact
+          then:
+            - script.execute: pulse_relay
+
+# --- Optional: keep MQTT instead of (or alongside) the native API -----------
+# ESPHome then publishes its own HA discovery and online/offline status.
+# Topic names follow ESPHome's layout (<topic_prefix>/cover/garage_door/...),
+# not garage/door/set, so update anything else that used the old topics.
+#
+# mqtt:
+#   broker: !secret mqtt_broker
+#   port: 1883
+#   username: !secret mqtt_username
+#   password: !secret mqtt_password
+#   topic_prefix: garage-door
+#   discovery: true
