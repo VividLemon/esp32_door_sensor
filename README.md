@@ -12,7 +12,7 @@ I started with the C++ Arduino sketch, then wrote ESPHome and MicroPython versio
 | Version | Files | Talks to Home Assistant via |
 | --- | --- | --- |
 | C++ (Arduino) | `esp32_door_sensor.ino`, `secrets.example.h` | MQTT + discovery |
-| ESPHome | `garage-door.yaml` | Native API (MQTT optional) |
+| ESPHome | `garage-door.yaml` | Native API |
 | MicroPython | `main.py`, `secrets.example.py` | MQTT + discovery |
 
 > **If this is ever used again, use the ESPHome version.** It's the least code, gets OTA updates and a fallback hotspot for free, and doesn't need reconnect or discovery logic maintained by hand.
@@ -24,16 +24,9 @@ Create `secrets.yaml` next to `garage-door.yaml`:
 ```yaml
 wifi_ssid: "YourNetwork"
 wifi_password: "YourWifiPassword"
-fallback_ap_password: "change-me-123"
 
 # Generate with: openssl rand -base64 32   (or let the ESPHome dashboard create one)
-api_encryption_key: "REPLACE_WITH_32_BYTE_BASE64_KEY"
-ota_password: "change-me"
-
-# Only needed if you enable the mqtt: block
-mqtt_broker: "192.168.1.10"
-mqtt_username: ""
-mqtt_password: ""
+garage_door__encryption_key: "REPLACE_WITH_32_BYTE_BASE64_KEY"
 ```
 
 Then flash it over USB (later updates can go over Wi-Fi):
@@ -42,7 +35,7 @@ Then flash it over USB (later updates can go over Wi-Fi):
 esphome run garage-door.yaml
 ```
 
-Home Assistant should discover the device automatically; add it with the same `api_encryption_key`.
+Home Assistant should discover the device automatically; add it with the same `garage_door__encryption_key`.
 
 ### Other versions
 
